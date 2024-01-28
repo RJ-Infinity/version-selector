@@ -1,5 +1,7 @@
 #![feature(absolute_path)]
 
+const VERSION: &str = "v1.1.0";
+
 use std::{fs, env, path::{self, PathBuf}, io::{self, Write}};
 use RJJSONrust::JSON;
 use const_format::formatcp;
@@ -209,7 +211,8 @@ macro_rules! commands {
     }
 }
 
-static COMMANDS: [Command; 5] = commands![
+static COMMANDS: [Command; 6] = commands![
+    #["--version": "this is the prints the version of the selector application"] |args|println!("{}",VERSION),
     #["help": "this is the help command"] |args|{
         if args.len() == 0{
             for command in COMMANDS.iter(){

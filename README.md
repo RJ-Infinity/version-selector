@@ -51,5 +51,10 @@ if no arguments given starts an interactive list to select the version from.
 
 takes no arguments.
 
+### --version
+> this is the prints the version of the selector application
+
+ignores all arguments
+
 ## how it works
 the program creates a symlink to the file or dir that is selected
