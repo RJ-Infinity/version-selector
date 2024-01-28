@@ -209,7 +209,7 @@ macro_rules! commands {
     }
 }
 
-static COMMANDS: [Command; 3] = commands![
+static COMMANDS: [Command; 5] = commands![
     #["help": "this is the help command"] |args|{
         if args.len() == 0{
             for command in COMMANDS.iter(){
@@ -293,6 +293,19 @@ static COMMANDS: [Command; 3] = commands![
             }
         }
         println!("SUCSESS. `{}` is now the selected version of the app.",path::absolute(selected_version).unwrap().display());
+    },
+    #["where": "alias to the which command"] |args| run_command("which",args),
+    #["which": "shows the selected version"] |args|{
+        if args.len() > 0{
+            eprintln!("Error where accepts no arguments");
+            return;
+        }
+        let settings = unwrap_or_exit!(get_settings());
+        let target = unwrap_or!(settings.output_path.canonicalize(), _=>{
+            println!("no selected version as the selected version path is invalid or does not exist");
+            return;
+        });
+        println!("{}",target.display());
     }
 ];
 
