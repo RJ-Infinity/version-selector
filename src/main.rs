@@ -212,7 +212,7 @@ macro_rules! commands {
 }
 
 static COMMANDS: [Command; 6] = commands![
-    #["--version": "this is the prints the version of the selector application"] |args|println!("{}",VERSION),
+    #["--version": "this is the prints the version of the selector application"] |_args|println!("{}",VERSION),
     #["help": "this is the help command"] |args|{
         if args.len() == 0{
             for command in COMMANDS.iter(){
