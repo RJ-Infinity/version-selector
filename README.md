@@ -46,5 +46,10 @@ takes an optional argument of the version name to select.
 
 if no arguments given starts an interactive list to select the version from.
 
+### where (alias which)
+> shows the selected version
+
+takes no arguments.
+
 ## how it works
 the program creates a symlink to the file or dir that is selected
