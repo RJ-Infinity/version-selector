@@ -4,6 +4,23 @@ use std::{fs, env, path::{self, PathBuf}, io::{self, Write}};
 use RJJSONrust::JSON;
 use const_format::formatcp;
 
+macro_rules! unwrap_or {($in: expr, $match: pat => $or: block) =>{
+    match $in{Err($match)=>$or,Ok(v)=>v}
+};}
+macro_rules! unwrap_or_exit {
+    ($in: expr, $out: expr) => {unwrap_or!($in, _=>{return $out;})};
+    ($in: expr) => {unwrap_or_exit!($in, ())};
+}
+macro_rules! unwrap_or_log_exit {
+    ($in: expr, $out: expr) => {
+        unwrap_or!($in, e=>{
+            eprintln!("{}",e);
+            return $out;
+        })
+    };
+    ($in: expr) => {unwrap_or_log_exit!($in, ())};
+}
+
 mod symlink{
     /// note this entire module is untested on anything other than windows
     use std::{fs::{remove_dir_all, remove_file}, path::Path};
@@ -11,14 +28,13 @@ mod symlink{
     use std::os::windows::fs::{symlink_file, symlink_dir};
     use std::fs::{metadata, symlink_metadata};
 
-    macro_rules! metadata_unwrap {($fn:ident ($path:ident)) => {match $fn ($path){
-        Ok(md)=>md,
-        Err(e)=>return Err(match e.kind(){
+    macro_rules! metadata_unwrap {($fn:ident ($path:ident)) => {
+        unwrap_or!(($fn ($path)), e=>{return Err(match e.kind(){
             std::io::ErrorKind::NotFound => ErrorKind::PathDoesNotExist($path),
             std::io::ErrorKind::PermissionDenied => ErrorKind::PermisionError,
             e=>panic!("{:#?}",e),
-        })
-    }};}
+        })})
+    };}
 
     #[derive(Debug)]
     pub enum ErrorKind<'a, P:AsRef<Path>>{
@@ -96,19 +112,6 @@ const DEFAULT_JSON: &str = formatcp!(
     RELATIVE_PATH_KEY,
 );
 
-macro_rules! unwrap_or_exit {
-    ($in: expr, $out: expr) => {match $in{Err(_)=>{return $out;},Ok(v)=>v,}};
-    ($in: expr) => {unwrap_or_exit!($in, ())};
-}
-macro_rules! unwrap_or_log_exit {
-    ($in: expr, $out: expr) => {
-        match $in{Err(e)=>{
-            eprintln!("{}",e);
-            return $out;
-        },Ok(v)=>v}
-    };
-    ($in: expr) => {unwrap_or_log_exit!($in, ())};
-}
 
 struct Settings{
     path_prefix: String,
@@ -117,19 +120,19 @@ struct Settings{
 }
 impl Settings{
     fn new_from_path<P: AsRef<std::path::Path>>(path: P, abs_path: PathBuf)->Result<Self, String>{
-        let json = match fs::read_to_string(&path) {Err(err)=>{
+        let json = unwrap_or!(fs::read_to_string(&path), err=>{
             eprint!("Could not read config file `{}` due to error `{}`. ", JSON_FILE_PATH, err);
             if let Err(e) = fs::write(path, DEFAULT_JSON){
                 eprintln!("and could not create a default config file due to error `{}`. Below is the default.\n{}", e, DEFAULT_JSON);
             }else{eprintln!("so created a default config file.");}
             return Err("Error reading file.".to_string());
-        },Ok(json)=>json};
+        });
         return Self::new_from_str(json, abs_path);
     }
     fn new_from_str(json: String, mut abs_path: PathBuf)->Result<Self, String>{
-        let json = match JSON::string_to_object(json){Err(err)=>{
+        let json = unwrap_or!(JSON::string_to_object(json), err=>{
             return Err(format!("Error Parsing JSON. {:?}", err));
-        },Ok(json)=>json};
+        });
 
         let json = if let JSON::Dict(json) = json{json}else
         {return Err(format!("expected a dict as the root element"));};
@@ -174,9 +177,9 @@ fn get_version_files(settings: &Settings) -> Result<Vec<fs::DirEntry>, String>{
         json_path.push(JSON_FILE_PATH);
         json_path
     };
-    Ok(match fs::read_dir(settings.dir_path.clone()){Err(err)=>{
+    Ok(unwrap_or!(fs::read_dir(settings.dir_path.clone()), err=>{
         return Err(format!("could not read items in dir due to error `{}`.", err));
-    },Ok(p)=>p}
+    })
     .map(|p|p.expect("couldnt access path"))
     .filter(|p|(
         p.file_name().to_str().expect("invalid file name").starts_with(&settings.path_prefix) && 
@@ -250,10 +253,10 @@ static COMMANDS: [Command; 3] = commands![
             io::stdin()
             .read_line(&mut version)
             .expect("failed to read from stdin");
-            let version = match version.trim().parse::<usize>() {Ok(i) => i,Err(..) => {
+            let version = unwrap_or!(version.trim().parse::<usize>(), .. => {
                 recurse(vec![version.trim().to_string()]);
                 return;
-            },};
+            });
             version_files[version].path()
         }else{// use the arguments as the version
             let version_str = &args[0];
@@ -266,10 +269,10 @@ static COMMANDS: [Command; 3] = commands![
         };
         if let Err(e) = symlink::create_symlink(&selected_version, &settings.output_path){
             if let symlink::ErrorKind::PathAlreadyExists(_) = e{
-                if !match settings.output_path.symlink_metadata(){Err(e)=>{
+                if !unwrap_or!(settings.output_path.symlink_metadata(), e =>{
                     eprintln!("Error could not select version because read of the ouput file failed due to error `{}`", e);
                     return;
-                }, Ok(m)=>m,}.is_symlink(){
+                }).is_symlink(){
                     eprintln!(
                         "Error output file exists and is not a symlink so you will loose data if you select a version. Please manualy rename or remove the file `{}`",
                         path::absolute(settings.output_path).unwrap().display()
