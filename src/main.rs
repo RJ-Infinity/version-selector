@@ -90,7 +90,7 @@ const PATH_PREFIX_KEY: &str = "pathPrefix";
 const OUTPUT_PATH_KEY: &str = "outputPath";
 const RELATIVE_PATH_KEY: &str = "relativePath";
 const DEFAULT_JSON: &str = formatcp!(
-    "{{\n\t\"{}\": \"app-\",\n\t\"{}\": \"app-selected\"\n\t\"{}\": \".\"\n}}",
+    "{{\n\t\"{}\": \"app-\",\n\t\"{}\": \"app-selected\",\n\t\"{}\": \".\"\n}}",
     PATH_PREFIX_KEY,
     OUTPUT_PATH_KEY,
     RELATIVE_PATH_KEY,
