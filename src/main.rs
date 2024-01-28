@@ -260,7 +260,16 @@ static COMMANDS: [Command; 5] = commands![
             version_files[version].path()
         }else{// use the arguments as the version
             let version_str = &args[0];
-            let version = version_files.iter().find(|i|i.file_name().to_str().unwrap() == version_str);
+            let mut version = version_files.iter().find(|i|i.file_name().to_str().unwrap() == version_str);
+            if version.is_none(){
+                // do the non-prefixed checks after all the prefixed checks so if you
+                // have the files `prefix-name` and `prefix-prefix-name` it is posible
+                // to select `prefix-name` this is required as we have no guarantee
+                // about the order of the version_files
+                version = version_files.iter().find(
+                    |i|i.file_name().to_str().unwrap() == settings.path_prefix.clone()+version_str
+                );
+            }
             let version = if version.is_none(){
                 eprintln!("could not find version `{}` (note when running this command without a version argument it gives you an interactive list to select from)",version_str);
                 return;
