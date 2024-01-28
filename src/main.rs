@@ -4,7 +4,7 @@ use std::{fs, env, path::{self, PathBuf}, io::{self, Write}};
 use RJJSONrust::JSON;
 use const_format::formatcp;
 
-macro_rules! unwrap_or {($in: expr, $match: pat => $or: block) =>{
+macro_rules! unwrap_or {($in: expr, $match: pat => $or: expr) =>{
     match $in{Err($match)=>$or,Ok(v)=>v}
 };}
 macro_rules! unwrap_or_exit {
@@ -29,11 +29,11 @@ mod symlink{
     use std::fs::{metadata, symlink_metadata};
 
     macro_rules! metadata_unwrap {($fn:ident ($path:ident)) => {
-        unwrap_or!(($fn ($path)), e=>{return Err(match e.kind(){
+        unwrap_or!(($fn ($path)), e=>return Err(match e.kind(){
             std::io::ErrorKind::NotFound => ErrorKind::PathDoesNotExist($path),
             std::io::ErrorKind::PermissionDenied => ErrorKind::PermisionError,
             e=>panic!("{:#?}",e),
-        })})
+        }))
     };}
 
     #[derive(Debug)]
@@ -130,9 +130,9 @@ impl Settings{
         return Self::new_from_str(json, abs_path);
     }
     fn new_from_str(json: String, mut abs_path: PathBuf)->Result<Self, String>{
-        let json = unwrap_or!(JSON::string_to_object(json), err=>{
-            return Err(format!("Error Parsing JSON. {:?}", err));
-        });
+        let json = unwrap_or!(JSON::string_to_object(json), err=>return Err(
+            format!("Error Parsing JSON. {:?}", err)
+        ));
 
         let json = if let JSON::Dict(json) = json{json}else
         {return Err(format!("expected a dict as the root element"));};
@@ -177,9 +177,9 @@ fn get_version_files(settings: &Settings) -> Result<Vec<fs::DirEntry>, String>{
         json_path.push(JSON_FILE_PATH);
         json_path
     };
-    Ok(unwrap_or!(fs::read_dir(settings.dir_path.clone()), err=>{
-        return Err(format!("could not read items in dir due to error `{}`.", err));
-    })
+    Ok(unwrap_or!(fs::read_dir(settings.dir_path.clone()), err=>return Err(
+        format!("could not read items in dir due to error `{}`.", err)
+    ))
     .map(|p|p.expect("couldnt access path"))
     .filter(|p|(
         p.file_name().to_str().expect("invalid file name").starts_with(&settings.path_prefix) && 
