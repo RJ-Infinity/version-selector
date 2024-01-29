@@ -1,6 +1,6 @@
 #![feature(absolute_path)]
 
-const VERSION: &str = "v1.1.0";
+const VERSION: &str = "v1.1.1";
 
 use std::{fs, env, path::{self, PathBuf}, io::{self, Write}};
 use RJJSONrust::JSON;
@@ -139,18 +139,18 @@ impl Settings{
         let json = if let JSON::Dict(json) = json{json}else
         {return Err(format!("expected a dict as the root element"));};
 
-        let path_prefix = if json.contains_key(PATH_PREFIX_KEY){
-            if let JSON::String(prefix) = (**json.get(PATH_PREFIX_KEY).unwrap()).clone(){prefix}else
+        let path_prefix = if let Some(path_prefix) = json.get(PATH_PREFIX_KEY){
+            if let JSON::String(prefix) = (**path_prefix).clone(){prefix}else
             {return Err(format!("expected a the key `{}` to have a string value.", PATH_PREFIX_KEY));}
         }else{String::new()};
 
-        let output_path = if json.contains_key(OUTPUT_PATH_KEY){
-            if let JSON::String(prefix) = (**json.get(OUTPUT_PATH_KEY).unwrap()).clone(){prefix}else
+        let output_path = if let Some(output_path) = json.get(OUTPUT_PATH_KEY){
+            if let JSON::String(prefix) = (**output_path).clone(){prefix}else
             {return Err(format!("expected a the key `{}` to have a string value.", OUTPUT_PATH_KEY));}
         }else{return Err(format!("expected the root to contain the key `{}`.", OUTPUT_PATH_KEY));};
 
-        let relative_path = if json.contains_key(RELATIVE_PATH_KEY){
-            if let JSON::String(path) = (**json.get(RELATIVE_PATH_KEY).unwrap()).clone(){path}else
+        let relative_path = if let Some(relative_path) = json.get(RELATIVE_PATH_KEY){
+            if let JSON::String(path) = (**relative_path).clone(){path}else
             {return Err(format!("expected a the key `{}` to have a string value.", RELATIVE_PATH_KEY));}
         }else{".".to_string()};
         abs_path.push(relative_path);
@@ -162,8 +162,9 @@ impl Settings{
     }
     fn new(path_prefix: String, output_path: PathBuf, dir_path: PathBuf)->Self{Self{path_prefix, output_path, dir_path}}
 }
+fn get_current_exe()->PathBuf{env::current_exe().expect("couldnt find the path of the currently running application it is posible that this code has been loaded incorectly, that the application has been moved or removed whilst running or that the OS has crashed in some way.")}
 fn get_settings()->Result<Settings, ()>{
-    let mut path = env::current_exe().expect("couldnt find the path of version-selector");
+    let mut path = get_current_exe();
     path.pop();
     let mut json_path = path.clone();
     json_path.push(JSON_FILE_PATH);
@@ -171,9 +172,9 @@ fn get_settings()->Result<Settings, ()>{
 }
 
 fn get_version_files(settings: &Settings) -> Result<Vec<fs::DirEntry>, String>{
-    let exe_exception = env::current_exe().expect("couldnt find the path of version-selector");
+    let exe_exception = get_current_exe();
     let json_excpetion = {
-        let mut path = env::current_exe().expect("couldnt find the path of version-selector");
+        let mut path = get_current_exe();
         path.pop();
         let mut json_path = path.clone();
         json_path.push(JSON_FILE_PATH);
@@ -181,15 +182,14 @@ fn get_version_files(settings: &Settings) -> Result<Vec<fs::DirEntry>, String>{
     };
     Ok(unwrap_or!(fs::read_dir(settings.dir_path.clone()), err=>return Err(
         format!("could not read items in dir due to error `{}`.", err)
-    ))
-    .map(|p|p.expect("couldnt access path"))
-    .filter(|p|(
-        p.file_name().to_str().expect("invalid file name").starts_with(&settings.path_prefix) && 
+    )).filter_map(|p|p.ok()).filter(|p|
+        if let Some(name) = p.file_name().to_str(){
+            name.starts_with(&settings.path_prefix)
+        }else{false} &&
         p.path() != exe_exception &&
         p.path() != json_excpetion &&
         p.path() != settings.output_path
-    ))
-    .collect::<Vec<_>>())
+    ).collect::<Vec<_>>())
 }
 
 struct Command{
@@ -236,7 +236,7 @@ static COMMANDS: [Command; 6] = commands![
         }
         let settings = unwrap_or_exit!(get_settings());
         for ver in unwrap_or_log_exit!(get_version_files(&settings)){
-            println!("{}",ver.file_name().to_str().unwrap());
+            println!("{}",ver.file_name().to_str().unwrap_or("<non utf-8 file name>"));
         }
     },
     #["select": "selects a version"] |args|{
@@ -248,36 +248,37 @@ static COMMANDS: [Command; 6] = commands![
         let version_files = unwrap_or_log_exit!(get_version_files(&settings));
         let selected_version = if args.len() == 0{
             for (i, item) in version_files.iter().enumerate(){
-                println!("{}: {}", i, item.file_name().to_str().unwrap());
+                println!("{}: {}", i, item.file_name().to_str().unwrap_or("<non utf-8 file name>"));
             }
             print!("Choose Version: ");
-            io::stdout().flush().expect("flush failed");
+            io::stdout().flush().expect("failed to flush to stdout your terminal might have crashed or run out of memory or if an EOF was encountered you might have corrupt memory");
             let mut version = String::new();
-            io::stdin()
-            .read_line(&mut version)
-            .expect("failed to read from stdin");
-            let version = unwrap_or!(version.trim().parse::<usize>(), .. => {
+            if io::stdin().read_line(&mut version).is_err(){
+                eprintln!("Error the data inputed was not valid UTF-8.");
+                return;
+            }
+
+            if let Some(version) = if let Ok(version) = version.trim().parse::<usize>()
+            {version_files.get(version)}else{None}{version.path()}else{
                 recurse(vec![version.trim().to_string()]);
                 return;
-            });
-            version_files[version].path()
+            }
         }else{// use the arguments as the version
             let version_str = &args[0];
-            let mut version = version_files.iter().find(|i|i.file_name().to_str().unwrap() == version_str);
+            let mut version = version_files.iter().find(|i|i.file_name().to_str().unwrap_or("<non utf-8 file name>") == version_str);
             if version.is_none(){
                 // do the non-prefixed checks after all the prefixed checks so if you
                 // have the files `prefix-name` and `prefix-prefix-name` it is posible
                 // to select `prefix-name` this is required as we have no guarantee
                 // about the order of the version_files
                 version = version_files.iter().find(
-                    |i|i.file_name().to_str().unwrap() == settings.path_prefix.clone()+version_str
+                    |i|i.file_name().to_str().unwrap_or("<non utf-8 file name>") == settings.path_prefix.clone()+version_str
                 );
             }
-            let version = if version.is_none(){
+            if let Some(v) = version{v}else{
                 eprintln!("could not find version `{}` (note when running this command without a version argument it gives you an interactive list to select from)",version_str);
                 return;
-            }else{version.unwrap()};
-            version.path()
+            }.path()
         };
         if let Err(e) = symlink::create_symlink(&selected_version, &settings.output_path){
             if let symlink::ErrorKind::PathAlreadyExists(_) = e{
@@ -287,7 +288,7 @@ static COMMANDS: [Command; 6] = commands![
                 }).is_symlink(){
                     eprintln!(
                         "Error output file exists and is not a symlink so you will loose data if you select a version. Please manualy rename or remove the file `{}`",
-                        path::absolute(settings.output_path).unwrap().display()
+                        path::absolute(settings.output_path).expect("failed to resolve path that was just read it is posible that the path has been removed in the time between last read and attempted resolution. Try running the command again.").display()
                     );
                     return;
                 }
@@ -304,7 +305,7 @@ static COMMANDS: [Command; 6] = commands![
                 return;
             }
         }
-        println!("SUCSESS. `{}` is now the selected version of the app.",path::absolute(selected_version).unwrap().display());
+        println!("SUCSESS. `{}` is now the selected version of the app.",path::absolute(selected_version).expect("failed to resolve path that was just created it is posible that the path has been removed in the time between creation and attempted resolution. Try running the command again.").display());
     },
     #["where": "alias to the which command"] |args| run_command("which",args),
     #["which": "shows the selected version"] |args|{
@@ -338,8 +339,8 @@ fn main() {
         run_command("help", Vec::new());
         return;
     }
-    if env::args().count() < 1{panic!("invalid argument count");}
+    if env::args().count() < 2{panic!("invalid argument count. There is no argument for the program name which should be the first argument it is posible the program was invoked ununsualy if this is the case add a dummy argument as the first argument (the first argument is ignored it just needs to exist). If the program was invoked normaly it is posible that your memory has been corrupted.");}
     //the above garantee at least two arguments
 
-    run_command(&env::args().nth(1).unwrap(), env::args().skip(2).collect());
+    run_command(&env::args().nth(1).expect("just confirmed that there are at lease two arguments however failed to read the second argument it is posible your memory has been corrupted."), env::args().skip(2).collect());
 }
